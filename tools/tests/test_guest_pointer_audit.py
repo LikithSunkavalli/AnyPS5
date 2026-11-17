@@ -106,6 +106,44 @@ class AccessTests(unittest.TestCase):
         )
         self.assertEqual(findings(source), [])
 
+    def test_member_address_is_not_an_access(self):
+        source = (
+            "int APS5_VABI sceExampleWrapped(Info* out) { const int v = 1; return CopyOut(&out->size, &v, sizeof(v)) ? 0 : 14; }\n"
+            "int APS5_VABI sceExampleMagic(Info* param) { return static_cast<int>(reinterpret_cast<std::uintptr_t>(&param->base)); }\n"
+            "int APS5_VABI sceExampleNested(Info* param) { return CopyOut(&param->base.size, nullptr, 0) ? 0 : 14; }\n"
+        )
+        self.assertEqual(findings(source), [])
+
+    def test_member_address_through_a_member_pointer_is_an_access(self):
+        source = (
+            "int APS5_VABI sceExampleChain(Info* p) { return CopyOut(&p->next->size, nullptr, 0) ? 0 : 14; }\n"
+            "int APS5_VABI sceExampleIndexed(Info* p) { return CopyOut(&p->items[1], nullptr, 0) ? 0 : 14; }\n"
+            "int APS5_VABI sceExampleAnd(Info* p, bool ok) { return ok && p->size; }\n"
+        )
+        self.assertEqual(findings(source), [
+            ("sceExampleChain", "p", ["member"]),
+            ("sceExampleIndexed", "p", ["member"]),
+            ("sceExampleAnd", "p", ["member"]),
+        ])
+
+    def test_member_address_passed_to_a_raw_call_is_an_access(self):
+        source = (
+            "void APS5_VABI sceExampleCopy(Id* self, const Id* other) { std::memcpy(&self->id, &other->id, sizeof(self->id)); }\n"
+            "void APS5_VABI sceExampleCast(void* out) { std::memset(reinterpret_cast<char*>(&static_cast<Info*>(out)->size), 0, 4); }\n"
+        )
+        self.assertEqual(findings(source), [
+            ("sceExampleCopy", "self", ["library call"]),
+            ("sceExampleCopy", "other", ["library call"]),
+            ("sceExampleCast", "out", ["library call"]),
+        ])
+
+    def test_member_of_another_object_with_the_parameter_name_is_not_an_access(self):
+        source = (
+            "int APS5_VABI sceExampleList(std::uint32_t* devices) { return service.devices[0] + state->devices[1] + Ns::devices[2]; }\n"
+            "int APS5_VABI sceExampleInfo(Info* info) { return state.info->size + owner->info->size + (*holder).info[0]; }\n"
+        )
+        self.assertEqual(findings(source), [])
+
     def test_evaluated_safe_call_arguments_are_accesses(self):
         source = (
             "int APS5_VABI sceExampleSize(Info* p) { Info local{}; return GuestCopyIn_nid_no_patch(&local, p, p->size); }\n"

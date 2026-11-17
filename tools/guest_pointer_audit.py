@@ -21,6 +21,8 @@ RAW_CALL = re.compile(rf"\b(?:std::|::)?({'|'.join(RAW_CALLS)})\s*\(")
 QUIET_CALL = re.compile(rf"\b({'|'.join((*SAFE, *UNEVALUATED))})\s*\(")
 CAST = re.compile(r"^(?:\(\s*[\w\s:*<>]+\)(?=\s*\S)|(?:reinterpret|static|const)_cast\s*<[^>]*>|\()\s*")
 CAST_TYPE = r"<(?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*>"
+ADDRESS_OF = re.compile(r"(?:^|[^&])&\s*\Z")
+MEMBER_PATH = re.compile(r"\s*\w+(?:\s*\.\s*\w+)*\s*")
 
 
 def split_top_level(text, angles=True):
@@ -103,16 +105,29 @@ def names_parameter(argument, name):
         if stripped == argument:
             break
         argument = stripped
+    if re.match(rf"&\s*{operand(name)}\s*->", argument):
+        return True
     return re.match(rf"{re.escape(name)}\b", argument) is not None
 
 
-def accesses(body, name):
+def operand(name):
     word = re.escape(name)
-    operand = rf"(?:\b{word}\b|\b(?:reinterpret|static|const)_cast\s*{CAST_TYPE}\s*\(\s*{word}\s*\))"
+    return rf"(?:(?<![.\w])(?<!->)(?<!::){word}\b|\b(?:reinterpret|static|const)_cast\s*{CAST_TYPE}\s*\(\s*{word}\s*\))"
+
+
+def member_address(body, match):
+    if not ADDRESS_OF.search(body, 0, match.start()):
+        return False
+    return not body.startswith(("->", "[", "("), MEMBER_PATH.match(body, match.end()).end())
+
+
+def accesses(body, name):
+    target = operand(name)
     found = []
-    for kind, pattern in (("member", rf"{operand}\s*->"), ("index", rf"{operand}\s*\["),
-                          ("dereference", rf"(?:^|[=(,;{{}}!&|?:+\-]|\breturn)\s*\*\s*{operand}")):
-        found += [(match.end() - 1, kind) for match in re.finditer(pattern, body)]
+    for kind, pattern in (("member", rf"{target}\s*->"), ("index", rf"{target}\s*\["),
+                          ("dereference", rf"(?:^|[=(,;{{}}!&|?:+\-]|\breturn)\s*\*\s*{target}")):
+        found += [(match.end() - 1, kind) for match in re.finditer(pattern, body)
+                  if not (kind == "member" and member_address(body, match))]
     for match in RAW_CALL.finditer(body):
         open_paren = match.end() - 1
         arguments = split_top_level(body[open_paren + 1:closing(body, open_paren)], angles=False)
