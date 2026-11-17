@@ -21,7 +21,7 @@ RAW_CALL = re.compile(rf"\b(?:std::|::)?({'|'.join(RAW_CALLS)})\s*\(")
 QUIET_CALL = re.compile(rf"\b({'|'.join((*SAFE, *UNEVALUATED))})\s*\(")
 CAST = re.compile(r"^(?:\(\s*[\w\s:*<>]+\)(?=\s*\S)|(?:reinterpret|static|const)_cast\s*<[^>]*>|\()\s*")
 CAST_TYPE = r"<(?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*>"
-ADDRESS_OF = re.compile(r"(?:^|[^&])&\s*\Z")
+ADDRESS_OF = re.compile(r"(?:^|[=(\[,;{}!?:+\-]|\breturn)\s*&\s*\Z")
 MEMBER_PATH = re.compile(r"\s*\w+(?:\s*\.\s*\w+)*\s*")
 
 
@@ -116,9 +116,10 @@ def operand(name):
 
 
 def member_address(body, match):
-    if not ADDRESS_OF.search(body, 0, match.start()):
+    path = MEMBER_PATH.match(body, match.end())
+    if path is None or not ADDRESS_OF.search(body, 0, match.start()):
         return False
-    return not body.startswith(("->", "[", "("), MEMBER_PATH.match(body, match.end()).end())
+    return not body.startswith(("->", "[", "("), path.end())
 
 
 def accesses(body, name):

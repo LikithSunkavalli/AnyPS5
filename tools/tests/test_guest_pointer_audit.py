@@ -119,11 +119,17 @@ class AccessTests(unittest.TestCase):
             "int APS5_VABI sceExampleChain(Info* p) { return CopyOut(&p->next->size, nullptr, 0) ? 0 : 14; }\n"
             "int APS5_VABI sceExampleIndexed(Info* p) { return CopyOut(&p->items[1], nullptr, 0) ? 0 : 14; }\n"
             "int APS5_VABI sceExampleAnd(Info* p, bool ok) { return ok && p->size; }\n"
+            "int APS5_VABI sceExampleMask(Info* p, int flags) { return flags & p->mask; }\n"
+            "int APS5_VABI sceExampleCastMask(void* p, int x) { int v = x & static_cast<Info*>(p)->flags; return v; }\n"
+            "int APS5_VABI sceExamplePointerToMember(Info* p, int Info::*m) { return CopyOut(&p->*m, nullptr, 0) ? 0 : 14; }\n"
         )
         self.assertEqual(findings(source), [
             ("sceExampleChain", "p", ["member"]),
             ("sceExampleIndexed", "p", ["member"]),
             ("sceExampleAnd", "p", ["member"]),
+            ("sceExampleMask", "p", ["member"]),
+            ("sceExampleCastMask", "p", ["member"]),
+            ("sceExamplePointerToMember", "p", ["member"]),
         ])
 
     def test_member_address_passed_to_a_raw_call_is_an_access(self):
